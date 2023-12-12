@@ -48,9 +48,6 @@ async def on_message(message):
             await message.channel.send(f'{target_user.mention} :foot:')
             break
 
-    if 'maria' in message.content.lower():
-        await message.channel.send(f':heart:')
-
 async def play_audio_with_delay(audio_source, delay):
     await asyncio.sleep(delay)
     voice_client.play(audio_source)
