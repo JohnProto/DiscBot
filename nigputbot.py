@@ -1,4 +1,5 @@
 import discord
+#Mia Malakia Kserw Egw Na Doume Ti Tha Ginei Gia Ta Meems
 from discord import FFmpegPCMAudio
 import asyncio
 
