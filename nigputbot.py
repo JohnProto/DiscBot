@@ -90,4 +90,4 @@ async def on_voice_state_update(member, before, after):
                 await bot_voice[0].disconnect()
                 print(f"bot left {voice_channel.name}")
 
-client.run('token')
+client.run(token)
