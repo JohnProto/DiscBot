@@ -13,6 +13,13 @@ try:
 except FileNotFoundError:
     nerd_counter = 0
 
+try:
+    with open('token.txt', 'r') as file:
+        token = file.read().strip()
+except FileNotFoundError:
+    print("Token file not found!")
+    exit()
+
 voice_client = None
 
 @client.event 
@@ -81,4 +88,4 @@ async def on_voice_state_update(member, before, after):
                 await bot_voice[0].disconnect()
                 print(f"bot left {voice_channel.name}")
 
-client.run('MTE4MjM5OTY3Njc1MDc3MDI4Ng.Gb2mTK.RnA4m68n1QWti4LFjjO7382Nchq4_2adViTxUA')
+client.run('token')
