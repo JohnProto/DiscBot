@@ -1,5 +1,5 @@
 import discord
-#Mia Malakia Kserw Egw Na Doume Ti Tha Ginei Gia Ta Meems
+#Mia Malakia Kserw Egw Na Doume Ti Tha Ginei Gia Ta Memes
 from discord import FFmpegPCMAudio
 import asyncio
 
@@ -25,6 +25,7 @@ voice_client = None
 
 @client.event 
 async def on_ready():
+    print("Ready!")
     print(f'Logged in as {client.user}')
 
 @client.event
