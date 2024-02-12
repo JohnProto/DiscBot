@@ -1,5 +1,4 @@
 import discord
-#nigput
 from discord import FFmpegPCMAudio
 import asyncio
 
@@ -27,6 +26,7 @@ voice_client = None
 async def on_ready():
     print("Ready!")
     print(f'Logged in as {client.user}')
+    await client.change_presence(activity=discord.Game(name="CSD Simulator"))
 
 @client.event
 async def on_message(message):
