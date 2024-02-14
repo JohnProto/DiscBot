@@ -31,6 +31,7 @@ async def on_ready():
 @client.event
 async def on_message(message):
     global nerd_counter
+    global voice_client
 
     if message.author == client.user:
         return
@@ -50,12 +51,41 @@ async def on_message(message):
         with open('counter.txt', 'w') as file:
             file.write(str(nerd_counter))
 
+    #teoCode
     target_user_id = 361434482735054850
     for user in message.mentions:
         if user.id == target_user_id:
             target_user = user
             await message.channel.send(f'{target_user.mention} :foot:')
             break
+
+    if 'gtfi' in message.content.lower() and client.user in message.mentions:
+        audio_source = FFmpegPCMAudio('Erika.mp3')
+        if message.guild and message.author.voice and message.author.voice.channel:
+            voice_channel = message.author.voice.channel
+            if voice_channel:
+                if not voice_client:
+                    voice_client = await voice_channel.connect()
+                    await play_audio_with_delay(audio_source, 1)
+                    await message.channel.send(f"Joined {voice_channel.name}")
+                else:
+                    if voice_client.is_connected():
+                        await message.channel.send("Already in a voice channel")
+                    else:
+                        voice_client = await voice_channel.connect()
+                        await play_audio_with_delay(audio_source, 1)
+                        await message.channel.send(f"Rejoined {voice_channel.name}")
+        else:
+            await message.channel.send("You need to be in a voice channel to use this command")
+
+    if 'gtfo' in message.content.lower() and client.user in message.mentions:
+        audio_source = FFmpegPCMAudio('abuenoAdiosMaster.mp3')
+        if voice_client and voice_client.is_connected():
+            await play_audio_with_delay(audio_source, 0)
+            await asyncio.sleep(4)
+            await voice_client.disconnect()
+            voice_client = None
+            await message.channel.send("Disconnected from voice channel")
 
     target_user_id = 949241373922570240
     if message.author.id == target_user_id:
