@@ -106,7 +106,7 @@ async def on_voice_state_update(member, before, after):
 
     bot_voice = client.voice_clients
     if (before.channel and before.channel.id == target_channel_id and after.channel == None) or (after.channel and after.channel.id == target_channel_id):
-        if voice_channel and member.id != client.user.id:
+        if voice_channel and member.id != client.user.id and not after.self_stream and not before.self_stream:
             if len(voice_channel.members) > 0 and not bot_voice:   
                 voice_client = await voice_channel.connect()
                 await play_audio_with_delay(audio_source, 1)
