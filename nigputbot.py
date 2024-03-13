@@ -86,10 +86,6 @@ async def on_message(message):
             voice_client = None
             await message.channel.send("Disconnected from voice channel")
 
-    #teoCode
-    target_user_id = 949241373922570240
-    if message.author.id == target_user_id:
-        await message.channel.send(f'stfu im better')
 
 async def play_audio_with_delay(audio_source, delay):
     await asyncio.sleep(delay)
