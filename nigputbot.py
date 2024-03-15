@@ -51,13 +51,6 @@ async def on_message(message):
         with open('counter.txt', 'w') as file:
             file.write(str(nerd_counter))
 
-    target_user_id = 361434482735054850 #teo
-    for user in message.mentions:
-        if user.id == target_user_id:
-            target_user = user
-            await message.channel.send(f'{target_user.mention} :foot:')
-            
-
     if 'gtfi' in message.content.lower() and client.user in message.mentions:
         audio_source = FFmpegPCMAudio('Erika.mp3')
         if message.guild and message.author.voice and message.author.voice.channel:
