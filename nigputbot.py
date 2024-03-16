@@ -1,4 +1,3 @@
-#test
 import discord
 from discord import FFmpegPCMAudio
 import asyncio
