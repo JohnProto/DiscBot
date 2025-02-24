@@ -1,2 +1,2 @@
 # DiscBot
-A fun, TOTALLY NORMAL Discord Bot
+A fun, TOTALLY NORMAL Discord Bot!
