@@ -4,9 +4,7 @@ from discord.ext import commands
 import re
 from collections import defaultdict
 from datetime import datetime, timezone
-import matplotlib.pyplot as plt
 import os
-import numpy as np
 import json
 import unicodedata
 
@@ -14,7 +12,6 @@ import unicodedata
 TOKEN_FILE = 'token.txt'
 FAIL_PENALTY = 7
 STREAK_START_DATE = datetime(2025, 9, 6, tzinfo=timezone.utc)
-GRAPH_OUTPUT_FOLDER = "wordle_graphs"
 CACHE_FILE = "wordle_cache.json"
 
 # --- BOT SETUP ---
@@ -32,6 +29,11 @@ bot = WordleBot()
 
 # --- UTILITIES ---
 def read_token():
+    # Priority 1: Environment Variable (Pterodactyl)
+    token = os.getenv("DISCORD_TOKEN")
+    if token: return token.strip()
+    
+    # Priority 2: Local File
     try:
         with open(TOKEN_FILE, 'r') as f: return f.read().strip()
     except FileNotFoundError:
@@ -113,13 +115,13 @@ async def update_data(interaction: discord.Interaction, full_rescan=False):
 @commands.guild_only()
 @commands.is_owner()
 async def sync(ctx):
-    """Syncs commands LOCALLY (Fast & Instant)"""
+    """Syncs commands LOCALLY"""
     # Debug Check
     cmds = bot.tree.get_commands()
     print(f"DEBUG: Found {len(cmds)} commands in memory.")
     
     if len(cmds) == 0:
-        await ctx.send("⚠️ **Zero commands found!**\nYou probably ran `!clearglobal`. **Restart the bot** to reload the commands, then type `!sync` again.")
+        await ctx.send("⚠️ **Zero commands found!** Restart the bot.")
         return
 
     print("Syncing commands to this server...")
@@ -131,11 +133,10 @@ async def sync(ctx):
 @commands.guild_only()
 @commands.is_owner()
 async def clearglobal(ctx):
-    """Deletes GLOBAL commands to fix duplicates"""
-    print("Clearing global commands...")
+    """Deletes GLOBAL commands"""
     bot.tree.clear_commands(guild=None)
     await bot.tree.sync()
-    await ctx.send("🧹 **Global commands cleared.**\nNow **Restart the Bot** and type `!sync` to fix your menu.")
+    await ctx.send("🧹 **Global commands cleared.** Restart the bot now.")
 
 # --- APP COMMANDS ---
 
@@ -187,68 +188,6 @@ async def wordlestats(interaction: discord.Interaction):
            f"👑 **MVP:** {leaderboard[0]['full_name']}\n"
            f"💀 **LVP:** {leaderboard[-1]['full_name']}")
     await interaction.followup.send(msg)
-
-@bot.tree.command(name="genplots", description="Generate performance graphs locally")
-async def genplots(interaction: discord.Interaction):
-    await interaction.response.defer(thinking=True)
-    if not os.path.exists(GRAPH_OUTPUT_FOLDER): os.makedirs(GRAPH_OUTPUT_FOLDER)
-    games_data = await update_data(interaction)
-    if not games_data: await interaction.followup.send("No data found."); return
-
-    games_data.sort(key=lambda x: x['date'])
-    start_date = datetime.fromtimestamp(games_data[0]['date']).strftime('%b %Y')
-    end_date = datetime.fromtimestamp(games_data[-1]['date']).strftime('%b %Y')
-    
-    player_data = defaultdict(lambda: {'games': [], 'avgs': [], 'war_history': [], 'current_war': 0.0, 'total_score': 0, 'game_count': 0})
-
-    for game in games_data:
-        scores_map = game['scores']
-        scores_list = list(scores_map.values())
-        if not scores_list: continue
-        day_avg = sum(scores_list) / len(scores_list)
-        for uid, score in scores_map.items():
-            stats = player_data[uid]
-            stats['total_score'] += score
-            stats['game_count'] += 1
-            stats['current_war'] += (day_avg - score)
-            stats['games'].append(stats['game_count'])
-            stats['avgs'].append(stats['total_score'] / stats['game_count'])
-            stats['war_history'].append(stats['current_war'])
-
-    plt.style.use('bmh')
-    generated_count = 0
-    for uid, stats in player_data.items():
-        if stats['game_count'] < 5: continue
-        user = interaction.guild.get_member(int(uid))
-        name = user.display_name if user else f"User_{uid}"
-        safe_name = "".join(x for x in name if x.isalnum() or x in " _-")
-        
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 14))
-        fig.suptitle(f"Wordle Analytics: {name}\n{start_date} - {end_date}", fontsize=18, fontweight='bold', y=0.96)
-        
-        ax1.plot(stats['games'], stats['avgs'], color='#2ca02c', linewidth=2.5)
-        ax1.axhline(y=4.0, color='grey', linestyle='--', alpha=0.5)
-        curr_avgs = stats['avgs']
-        ax1.set_ylim(max(max(curr_avgs)+0.5, 6.0), min(min(curr_avgs)-0.2, 3.0))
-        ax1.set_title("Performance Consistency (Lower is Better)")
-        ax1.set_ylabel("Average Score")
-        
-        wars = stats['war_history']
-        ax2.plot(stats['games'], wars, color='#1f77b4', linewidth=2)
-        wars_arr = np.array(wars)
-        ax2.fill_between(stats['games'], wars, 0, where=(wars_arr >= 0), color='green', alpha=0.15)
-        ax2.fill_between(stats['games'], wars, 0, where=(wars_arr < 0), color='red', alpha=0.15)
-        ax2.axhline(0, color='black', linewidth=1.5)
-        ax2.set_title("Contribution to Group (WAR)")
-        ax2.set_ylabel("Total WAR")
-        ax2.set_xlabel("Games Played")
-        
-        plt.subplots_adjust(hspace=0.3, top=0.90, bottom=0.05)
-        plt.savefig(f"{GRAPH_OUTPUT_FOLDER}/{safe_name}_stats.png", dpi=300, bbox_inches='tight')
-        plt.close(fig)
-        generated_count += 1
-
-    await interaction.followup.send(f"✅ Generated {generated_count} graphs in `{GRAPH_OUTPUT_FOLDER}/`")
 
 @bot.tree.command(name="rescan", description="Force re-download history")
 async def rescan(interaction: discord.Interaction):
