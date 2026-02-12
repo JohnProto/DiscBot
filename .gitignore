@@ -3,3 +3,7 @@ wordle_cache.json
 __pycache__/
 *.log
 deploy.sh
+
+# Environments and IDE
+.venv/
+.vscode/
