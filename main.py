@@ -52,6 +52,8 @@ def read_token():
         print(f"Error: {TOKEN_FILE} not found."); exit()
 
 def clean_name_for_table(name):
+    # Removes emojis and special chars to find the "real" text
+    # e.g. "🔥Steve🔥" -> "Steve"
     name = unicodedata.normalize('NFKD', name)
     return "".join(c for c in name if c.isalnum() or c in " -_.,")
 
@@ -81,17 +83,35 @@ def load_cache_internal():
 def save_cache_internal(data):
     with open(CACHE_FILE, 'w') as f: json.dump(data, f, indent=4)
 
-def get_name_map(guild):
+# OPTIMIZED NAME MAPPING (Case-Insensitive & Cleaned)
+def get_smart_name_map(guild):
     name_map = {}
     for member in guild.members:
-        name_map[member.display_name.strip()] = str(member.id)
-        name_map[member.name.strip()] = str(member.id)
+        uid = str(member.id)
+        
+        # 1. Lowercase Display Name (e.g. "Steve" -> "steve")
+        name_map[member.display_name.lower().strip()] = uid
+        
+        # 2. Lowercase Username (e.g. "steve_gamer")
+        name_map[member.name.lower().strip()] = uid
+        
+        # 3. Lowercase Global Name (if exists)
+        if member.global_name:
+            name_map[member.global_name.lower().strip()] = uid
+
+        # 4. "Cleaned" version (removes emojis)
+        # Handles cases like "🔥Steve🔥" -> matches "steve"
+        clean = clean_name_for_table(member.display_name).lower().strip()
+        if clean:
+            name_map[clean] = uid
+            
     return name_map
 
 def parse_message_text(content, name_map, fail_penalty):
     score_pattern = re.compile(r"([X\d])/6:(.*)")
     mention_pattern = re.compile(r"<@!?(\d+)>")
     results = []
+    
     if "Your group is on a" in content:
         for line in content.split('\n'):
             line = line.strip()
@@ -101,13 +121,33 @@ def parse_message_text(content, name_map, fail_penalty):
                 user_part = match.group(2)
                 score = fail_penalty if raw_score == 'X' else int(raw_score)
                 found_users = set()
+                
+                # 1. Extract Direct Mentions (Best Method)
                 mentions = mention_pattern.findall(user_part)
                 for uid in mentions: 
                     found_users.add(uid)
+                    # Remove the mention so we don't double-count text
                     user_part = user_part.replace(f"<@{uid}>", "").replace(f"<@!{uid}>", "")
-                for chunk in user_part.split('@'):
-                    clean = chunk.strip()
-                    if clean in name_map: found_users.add(name_map[clean])
+                
+                # 2. Extract Text Names (Fuzzy Match)
+                # Split by commas or @ signs depending on bot format
+                # We replace @ with space to handle "Steve @Bob"
+                normalized_text = user_part.replace('@', ' ').replace(',', ' ')
+                
+                for chunk in normalized_text.split():
+                    raw_text = chunk.strip().lower()
+                    if not raw_text: continue
+                    
+                    # Direct check (case-insensitive)
+                    if raw_text in name_map:
+                        found_users.add(name_map[raw_text])
+                        continue
+                        
+                    # Cleaned check (emoji-stripped)
+                    clean_text = clean_name_for_table(raw_text)
+                    if clean_text in name_map:
+                        found_users.add(name_map[clean_text])
+
                 for uid in found_users: results.append((uid, score))
     return results
 
@@ -148,12 +188,12 @@ def process_game_stats(cache, game):
             p_stats["wins"] += 1
         p_stats["games_played"] += 1
 
-# --- ASYNC DATA MANAGER (OPTIMIZED) ---
+# --- ASYNC DATA MANAGER ---
 
 async def update_data(channel, guild, full_rescan=False):
     async with CACHE_LOCK:
         cache = load_cache_internal()
-        name_map = get_name_map(guild)
+        name_map = get_smart_name_map(guild) # Use new smart map
         
         if full_rescan or cache["last_message_id"] is None:
             print("Performing FULL scan...")
@@ -168,13 +208,10 @@ async def update_data(channel, guild, full_rescan=False):
                 iterator = channel.history(limit=None, oldest_first=True)
 
         new_games_found = []
-        # Optimization: Track the latest ID locally
         scan_latest_id = cache["last_message_id"]
 
         async for message in iterator:
-            # Always update our tracker, even if message is ignored
             scan_latest_id = message.id
-            
             if message.created_at < STREAK_START_DATE: continue
             
             daily_results = parse_message_text(message.content, name_map, FAIL_PENALTY)
@@ -186,11 +223,7 @@ async def update_data(channel, guild, full_rescan=False):
                 }
                 new_games_found.append(game_entry)
 
-        # SAVE CONDITION:
-        # 1. New games found OR
-        # 2. We scanned forward (ID changed) even if no games found (prevents loop of death)
         data_changed = False
-
         if new_games_found:
             print(f"Found {len(new_games_found)} new games. Updating stats...")
             for game in new_games_found:
