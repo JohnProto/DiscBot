@@ -314,6 +314,7 @@ async def clearglobal(ctx):
 @bot.event
 async def on_ready():
     print(f'Logged in as {bot.user}')
+    print("Ready!")
 
 if __name__ == "__main__":
     token = read_token()
