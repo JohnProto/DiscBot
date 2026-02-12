@@ -16,6 +16,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 # --- CONFIGURATION ---
+WORDLE_BOT_ID = 1211781489931452447
 TOKEN_FILE = 'token.txt'
 FAIL_PENALTY = 7
 STREAK_START_DATE = datetime(2025, 9, 6, tzinfo=timezone.utc)
@@ -267,23 +268,26 @@ async def rescan(interaction: discord.Interaction):
 
 @bot.event
 async def on_message(message):
-    # Avoid infinite loops (bot replying to itself)
+    # 1. Ignore our own bot (always)
     if message.author == bot.user:
         return
 
-    # Check for the magic Streak phrase
-    # (Adjust text matching if your specific bot phrasing is slightly different)
-    if "Your group is on a" in message.content and "day streak" in message.content:
-        print(f"🔥 Streak message detected from {message.author.name}!")
+    # 2. Check if the message is from the OFFICIAL Wordle Bot
+    # (Remove the 'int()' cast if your ID is a string, but IDs are usually ints)
+    if message.author.id == WORDLE_BOT_ID:
         
-        # 1. Update data (Scan the message that was just sent)
-        games_data = await update_data(message.channel, message.guild)
-        
-        # 2. Generate the stats table
-        msg = generate_leaderboard_text(message.guild, games_data)
-        
-        # 3. Reply to the streak message
-        await message.channel.send(msg)
+        # 3. Check for the magic Streak phrase
+        if "Your group is on a" in message.content and "day streak" in message.content:
+            print(f"🔥 Streak message detected from Official Bot ({message.author.name})!")
+            
+            # Update data (Scan the message that was just sent)
+            games_data = await update_data(message.channel, message.guild)
+            
+            # Generate the stats table
+            msg = generate_leaderboard_text(message.guild, games_data)
+            
+            # Reply to the streak message
+            await message.channel.send(msg)
 
     # CRITICAL: Allow other commands (like !sync) to still work
     await bot.process_commands(message)
