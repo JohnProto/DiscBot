@@ -5,6 +5,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
 from utils import clean_name
+from config import CONFIG
 
 def generate_leaderboard(guild, cache):
     leaderboard = []
@@ -35,7 +36,7 @@ def generate_leaderboard(guild, cache):
         table_lines.append(line)
 
     return (f"**📊 OFFICIAL WORDLE ANALYTICS**\n"
-            f"*Season 1 Data ({len(cache['games'])} days)*\n\n"
+            f"*{CONFIG['SEASON_NAME']} Data ({len(cache['games'])} days)*\n\n" # <--- UPDATED
             f"```text\n" + "\n".join(table_lines) + "\n```\n"
             f"👑 **MVP:** {leaderboard[0]['full_name']}\n"
             f"💀 **LVP:** {leaderboard[-1]['full_name']}")

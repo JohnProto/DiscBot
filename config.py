@@ -39,6 +39,7 @@ def load_config():
         "WORDLE_BOT_ID": int(raw.get("wordle_bot_id", 0)),
         "FAIL_PENALTY": int(raw.get("fail_penalty", 7)),
         "STREAK_START_DATE": start_date,
+        "SEASON_NAME": raw.get("season_name", "Season 1"), # <--- NEW
         "TZ": timezone(timedelta(hours=raw.get("timezone_offset", 0)))
     }
 
