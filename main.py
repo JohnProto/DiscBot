@@ -8,7 +8,7 @@ import os
 import json
 import unicodedata
 import io
-import asyncio  # <--- NEW IMPORT
+import asyncio
 
 # --- GRAPHING LIBRARIES ---
 import matplotlib
@@ -25,7 +25,7 @@ STREAK_START_DATE = datetime(2025, 9, 6, tzinfo=timezone.utc)
 CACHE_FILE = "wordle_cache.json"
 
 # --- CONCURRENCY PROTECTION ---
-CACHE_LOCK = asyncio.Lock()  # <--- THE GUARD
+CACHE_LOCK = asyncio.Lock()
 
 # --- BOT SETUP ---
 class WordleBot(commands.Bot):
@@ -64,15 +64,12 @@ def get_empty_cache():
         "players": {}
     }
 
-# NOTE: These are synchronous helpers, but they are only called
-# inside the async lock in update_data/autocomplete.
 def load_cache_internal():
     if not os.path.exists(CACHE_FILE): 
         return get_empty_cache()
     try: 
         with open(CACHE_FILE, 'r') as f: 
             data = json.load(f)
-            # Migration check
             if "players" not in data:
                 print("⚠️ Old cache detected during load. Migrating...")
                 data["players"] = {}
@@ -126,7 +123,6 @@ def rebuild_player_stats(cache):
 def process_game_stats(cache, game):
     scores_map = game['scores']
     scores_list = list(scores_map.values())
-    
     if not scores_list: return
 
     day_avg = sum(scores_list) / len(scores_list)
@@ -152,10 +148,9 @@ def process_game_stats(cache, game):
             p_stats["wins"] += 1
         p_stats["games_played"] += 1
 
-# --- ASYNC DATA MANAGER (WITH LOCK) ---
+# --- ASYNC DATA MANAGER (OPTIMIZED) ---
 
 async def update_data(channel, guild, full_rescan=False):
-    # CRITICAL: Acquire lock before touching the file
     async with CACHE_LOCK:
         cache = load_cache_internal()
         name_map = get_name_map(guild)
@@ -173,12 +168,16 @@ async def update_data(channel, guild, full_rescan=False):
                 iterator = channel.history(limit=None, oldest_first=True)
 
         new_games_found = []
-        last_id = cache["last_message_id"]
+        # Optimization: Track the latest ID locally
+        scan_latest_id = cache["last_message_id"]
 
         async for message in iterator:
-            if message.created_at < STREAK_START_DATE: continue
-            daily_results = parse_message_text(message.content, name_map, FAIL_PENALTY)
+            # Always update our tracker, even if message is ignored
+            scan_latest_id = message.id
             
+            if message.created_at < STREAK_START_DATE: continue
+            
+            daily_results = parse_message_text(message.content, name_map, FAIL_PENALTY)
             if daily_results:
                 game_entry = {
                     'id': message.id, 
@@ -186,17 +185,24 @@ async def update_data(channel, guild, full_rescan=False):
                     'scores': {uid: score for uid, score in daily_results}
                 }
                 new_games_found.append(game_entry)
-            
-            last_id = message.id
-        
-        # Only write to disk if we actually found something
+
+        # SAVE CONDITION:
+        # 1. New games found OR
+        # 2. We scanned forward (ID changed) even if no games found (prevents loop of death)
+        data_changed = False
+
         if new_games_found:
             print(f"Found {len(new_games_found)} new games. Updating stats...")
             for game in new_games_found:
                 cache["games"].append(game)
                 process_game_stats(cache, game)
+            data_changed = True
+        
+        if scan_latest_id != cache["last_message_id"]:
+            cache["last_message_id"] = scan_latest_id
+            data_changed = True
             
-            cache["last_message_id"] = last_id
+        if data_changed:
             save_cache_internal(cache)
         
         return cache
@@ -238,7 +244,6 @@ def generate_leaderboard_text(guild, cache):
             f"💀 **LVP:** {leaderboard[-1]['full_name']}")
 
 async def player_autocomplete(interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
-    # Also lock the read to prevent reading a half-written file
     async with CACHE_LOCK:
         cache = load_cache_internal()
         
@@ -258,7 +263,6 @@ async def player_autocomplete(interaction: discord.Interaction, current: str) ->
 async def genplots(interaction: discord.Interaction, player_id: str):
     await interaction.response.defer(thinking=True)
     
-    # Lock handles the update
     cache = await update_data(interaction.channel, interaction.guild)
     
     if player_id not in cache["players"]:
@@ -326,7 +330,6 @@ async def on_message(message):
     if message.author == bot.user:
         return
 
-    # Check for Official Bot ID
     if message.author.id == WORDLE_BOT_ID:
         if "Your group is on a" in message.content and "day streak" in message.content:
             print(f"🔥 Streak message detected from Official Bot!")
@@ -350,7 +353,7 @@ async def sync(ctx):
 @bot.event
 async def on_ready():
     print(f'Logged in as {bot.user}')
-    print("Ready!")
+    print("Ready!") 
 
 if __name__ == "__main__":
     token = read_token()
