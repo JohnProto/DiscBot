@@ -52,8 +52,6 @@ def read_token():
         print(f"Error: {TOKEN_FILE} not found."); exit()
 
 def clean_name_for_table(name):
-    # Removes emojis and special chars to find the "real" text
-    # e.g. "🔥Steve🔥" -> "Steve"
     name = unicodedata.normalize('NFKD', name)
     return "".join(c for c in name if c.isalnum() or c in " -_.,")
 
@@ -83,28 +81,17 @@ def load_cache_internal():
 def save_cache_internal(data):
     with open(CACHE_FILE, 'w') as f: json.dump(data, f, indent=4)
 
-# OPTIMIZED NAME MAPPING (Case-Insensitive & Cleaned)
 def get_smart_name_map(guild):
     name_map = {}
     for member in guild.members:
         uid = str(member.id)
-        
-        # 1. Lowercase Display Name (e.g. "Steve" -> "steve")
         name_map[member.display_name.lower().strip()] = uid
-        
-        # 2. Lowercase Username (e.g. "steve_gamer")
         name_map[member.name.lower().strip()] = uid
-        
-        # 3. Lowercase Global Name (if exists)
         if member.global_name:
             name_map[member.global_name.lower().strip()] = uid
-
-        # 4. "Cleaned" version (removes emojis)
-        # Handles cases like "🔥Steve🔥" -> matches "steve"
         clean = clean_name_for_table(member.display_name).lower().strip()
         if clean:
             name_map[clean] = uid
-            
     return name_map
 
 def parse_message_text(content, name_map, fail_penalty):
@@ -122,28 +109,19 @@ def parse_message_text(content, name_map, fail_penalty):
                 score = fail_penalty if raw_score == 'X' else int(raw_score)
                 found_users = set()
                 
-                # 1. Extract Direct Mentions (Best Method)
                 mentions = mention_pattern.findall(user_part)
                 for uid in mentions: 
                     found_users.add(uid)
-                    # Remove the mention so we don't double-count text
                     user_part = user_part.replace(f"<@{uid}>", "").replace(f"<@!{uid}>", "")
                 
-                # 2. Extract Text Names (Fuzzy Match)
-                # Split by commas or @ signs depending on bot format
-                # We replace @ with space to handle "Steve @Bob"
                 normalized_text = user_part.replace('@', ' ').replace(',', ' ')
                 
                 for chunk in normalized_text.split():
                     raw_text = chunk.strip().lower()
                     if not raw_text: continue
-                    
-                    # Direct check (case-insensitive)
                     if raw_text in name_map:
                         found_users.add(name_map[raw_text])
                         continue
-                        
-                    # Cleaned check (emoji-stripped)
                     clean_text = clean_name_for_table(raw_text)
                     if clean_text in name_map:
                         found_users.add(name_map[clean_text])
@@ -193,7 +171,7 @@ def process_game_stats(cache, game):
 async def update_data(channel, guild, full_rescan=False):
     async with CACHE_LOCK:
         cache = load_cache_internal()
-        name_map = get_smart_name_map(guild) # Use new smart map
+        name_map = get_smart_name_map(guild)
         
         if full_rescan or cache["last_message_id"] is None:
             print("Performing FULL scan...")
@@ -260,6 +238,13 @@ def generate_leaderboard_text(guild, cache):
             'avg': avg, 'win_rate': win_rate,
             'war': stats["total_war"], 'games': stats["games_played"]
         })
+
+    # CRITICAL CRASH GUARD
+    if not leaderboard:
+        return (f"**📊 OFFICIAL WORDLE ANALYTICS**\n"
+                f"*Season 1 Data*\n\n"
+                f"⚠️ **Not enough data yet.**\n"
+                f"Players need at least 5 games to appear on the leaderboard.")
 
     leaderboard.sort(key=lambda x: x['war'], reverse=True)
 
