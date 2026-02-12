@@ -3,7 +3,6 @@ import json
 import asyncio
 import logging
 import discord
-from datetime import datetime
 from config import CONFIG
 from utils import parse_wordle_message, get_smart_name_map
 
@@ -61,7 +60,6 @@ async def load_cache():
 
 async def update_data(channel, guild, full_rescan=False):
     async with CACHE_LOCK:
-        # Load Cache
         if os.path.exists(CACHE_FILE):
              with open(CACHE_FILE, 'r') as f: cache = json.load(f)
         else: cache = get_empty_cache()
@@ -70,19 +68,14 @@ async def update_data(channel, guild, full_rescan=False):
 
         name_map = get_smart_name_map(guild)
         
-        # DETERMINE START POINT
         if full_rescan or cache["last_message_id"] is None:
             logger.info(f"Performing FULL scan (Skipping messages before {CONFIG['STREAK_START_DATE']})...")
-            
-            # OPTIMIZATION: 
-            # We tell Discord: "Don't even send me messages older than the Start Date."
-            # This saves HUGE amounts of time/API calls.
             iterator = channel.history(
                 limit=None, 
                 oldest_first=True, 
                 after=CONFIG["STREAK_START_DATE"]
             )
-            cache = get_empty_cache() # Reset Data
+            cache = get_empty_cache() 
         else:
             try:
                 last_obj = discord.Object(id=cache["last_message_id"])
@@ -99,17 +92,24 @@ async def update_data(channel, guild, full_rescan=False):
         scan_id = cache["last_message_id"]
         processed_count = 0
 
-        # SCAN LOOP
         async for msg in iterator:
             processed_count += 1
             scan_id = msg.id
             
-            # Progress Log every 500 messages (Prevent "Is it dead?" panic)
             if processed_count % 500 == 0:
-                logger.info(f"🔄 Scanning... {processed_count} messages processed so far.")
+                logger.info(f"🔄 Scanning... {processed_count} messages processed.")
 
-            # Safety check (Double check date even if API filtered)
+            # --- SECURITY CHECKS ---
+            
+            # 1. Date Check
             if msg.created_at < CONFIG["STREAK_START_DATE"]: continue
+
+            # 2. AUTHOR CHECK (The Fix)
+            # We ignore any message that isn't from the Official Bot ID defined in config
+            if msg.author.id != CONFIG["WORDLE_BOT_ID"]: 
+                continue 
+
+            # -----------------------
             
             results = parse_wordle_message(msg.content, name_map, CONFIG["FAIL_PENALTY"])
             if results:
@@ -119,7 +119,6 @@ async def update_data(channel, guild, full_rescan=False):
                     'scores': {uid: s for uid, s in results}
                 })
 
-        # SAVE RESULTS
         if new_games or scan_id != cache["last_message_id"]:
             if new_games:
                 logger.info(f"✅ Scan Complete. Found {len(new_games)} new games. Updating stats.")
