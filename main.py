@@ -8,6 +8,7 @@ import os
 import json
 import unicodedata
 import io
+import asyncio  # <--- NEW IMPORT
 
 # --- GRAPHING LIBRARIES ---
 import matplotlib
@@ -17,10 +18,14 @@ import numpy as np
 
 # --- CONFIGURATION ---
 TOKEN_FILE = 'token.txt'
-WORDLE_BOT_ID = 1211781489931452447 
+# Replace this with the ID of the bot that posts the Wordle scores
+WORDLE_BOT_ID = 123456789012345678 
 FAIL_PENALTY = 7
 STREAK_START_DATE = datetime(2025, 9, 6, tzinfo=timezone.utc)
 CACHE_FILE = "wordle_cache.json"
+
+# --- CONCURRENCY PROTECTION ---
+CACHE_LOCK = asyncio.Lock()  # <--- THE GUARD
 
 # --- BOT SETUP ---
 class WordleBot(commands.Bot):
@@ -56,25 +61,27 @@ def get_empty_cache():
     return {
         "last_message_id": None, 
         "games": [], 
-        "players": {} # New Optimized Storage
+        "players": {}
     }
 
-def load_cache():
+# NOTE: These are synchronous helpers, but they are only called
+# inside the async lock in update_data/autocomplete.
+def load_cache_internal():
     if not os.path.exists(CACHE_FILE): 
         return get_empty_cache()
     try: 
         with open(CACHE_FILE, 'r') as f: 
             data = json.load(f)
-            # Migration: If old cache format, add 'players' key
+            # Migration check
             if "players" not in data:
-                print("⚠️ Old cache detected. Migrating to optimized structure...")
+                print("⚠️ Old cache detected during load. Migrating...")
                 data["players"] = {}
-                data = rebuild_player_stats(data) # Force rebuild
+                data = rebuild_player_stats(data)
             return data
     except: 
         return get_empty_cache()
 
-def save_cache(data):
+def save_cache_internal(data):
     with open(CACHE_FILE, 'w') as f: json.dump(data, f, indent=4)
 
 def get_name_map(guild):
@@ -107,22 +114,15 @@ def parse_message_text(content, name_map, fail_penalty):
                 for uid in found_users: results.append((uid, score))
     return results
 
-# OPTIMIZATION: Rebuilds 'players' cache from the 'games' list
-# (Runs once on startup if needed, or on /rescan)
 def rebuild_player_stats(cache):
     print("🔄 Rebuilding Player Stats Cache...")
-    cache["players"] = {} # Reset
-    
-    # Sort games chronologically just in case
+    cache["players"] = {} 
     cache["games"].sort(key=lambda x: x['date'])
-
     for game in cache["games"]:
         process_game_stats(cache, game)
-    
-    save_cache(cache)
+    save_cache_internal(cache)
     return cache
 
-# OPTIMIZATION: Updates the running totals for a SINGLE game
 def process_game_stats(cache, game):
     scores_map = game['scores']
     scores_list = list(scores_map.values())
@@ -132,82 +132,80 @@ def process_game_stats(cache, game):
     day_avg = sum(scores_list) / len(scores_list)
     
     for uid, score in scores_map.items():
-        # Initialize user if not exists
         if uid not in cache["players"]:
             cache["players"][uid] = {
                 "scores": [],
-                "war_history": [], # Needed for graph
+                "war_history": [],
                 "total_war": 0.0,
                 "total_score": 0,
                 "wins": 0,
                 "games_played": 0
             }
         
-        # Calculate WAR for this specific game
         war_gained = day_avg - score
-        
-        # Update Running Totals
         p_stats = cache["players"][uid]
         p_stats["scores"].append(score)
-        p_stats["war_history"].append(p_stats["total_war"] + war_gained) # Store cumulative for graph
+        p_stats["war_history"].append(p_stats["total_war"] + war_gained)
         p_stats["total_war"] += war_gained
         p_stats["total_score"] += score
         if score < FAIL_PENALTY:
             p_stats["wins"] += 1
         p_stats["games_played"] += 1
 
+# --- ASYNC DATA MANAGER (WITH LOCK) ---
+
 async def update_data(channel, guild, full_rescan=False):
-    cache = load_cache()
-    name_map = get_name_map(guild)
-    
-    if full_rescan or cache["last_message_id"] is None:
-        print("Performing FULL scan...")
-        iterator = channel.history(limit=None, oldest_first=True)
-        cache["games"] = []
-        cache["players"] = {}
-    else:
-        try:
-            last_msg_obj = discord.Object(id=cache["last_message_id"])
-            iterator = channel.history(limit=None, after=last_msg_obj, oldest_first=True)
-        except:
+    # CRITICAL: Acquire lock before touching the file
+    async with CACHE_LOCK:
+        cache = load_cache_internal()
+        name_map = get_name_map(guild)
+        
+        if full_rescan or cache["last_message_id"] is None:
+            print("Performing FULL scan...")
             iterator = channel.history(limit=None, oldest_first=True)
+            cache["games"] = []
+            cache["players"] = {}
+        else:
+            try:
+                last_msg_obj = discord.Object(id=cache["last_message_id"])
+                iterator = channel.history(limit=None, after=last_msg_obj, oldest_first=True)
+            except:
+                iterator = channel.history(limit=None, oldest_first=True)
 
-    new_games_found = []
-    last_id = cache["last_message_id"]
+        new_games_found = []
+        last_id = cache["last_message_id"]
 
-    async for message in iterator:
-        if message.created_at < STREAK_START_DATE: continue
-        daily_results = parse_message_text(message.content, name_map, FAIL_PENALTY)
+        async for message in iterator:
+            if message.created_at < STREAK_START_DATE: continue
+            daily_results = parse_message_text(message.content, name_map, FAIL_PENALTY)
+            
+            if daily_results:
+                game_entry = {
+                    'id': message.id, 
+                    'date': message.created_at.timestamp(), 
+                    'scores': {uid: score for uid, score in daily_results}
+                }
+                new_games_found.append(game_entry)
+            
+            last_id = message.id
         
-        if daily_results:
-            game_entry = {
-                'id': message.id, 
-                'date': message.created_at.timestamp(), 
-                'scores': {uid: score for uid, score in daily_results}
-            }
-            new_games_found.append(game_entry)
+        # Only write to disk if we actually found something
+        if new_games_found:
+            print(f"Found {len(new_games_found)} new games. Updating stats...")
+            for game in new_games_found:
+                cache["games"].append(game)
+                process_game_stats(cache, game)
+            
+            cache["last_message_id"] = last_id
+            save_cache_internal(cache)
         
-        last_id = message.id
-    
-    # Process new games
-    if new_games_found:
-        print(f"Found {len(new_games_found)} new games. Updating stats...")
-        for game in new_games_found:
-            cache["games"].append(game)
-            # INCREMENTAL UPDATE: Only calc stats for the new games
-            process_game_stats(cache, game)
-        
-        cache["last_message_id"] = last_id
-        save_cache(cache)
-    
-    return cache
+        return cache
 
-# --- DISPLAY LOGIC (Reads from Optimized Cache) ---
+# --- DISPLAY LOGIC ---
 
 def generate_leaderboard_text(guild, cache):
     leaderboard = []
     
-    # O(N) where N is players (very small), instead of Games * Players
     for uid, stats in cache["players"].items():
         if stats["games_played"] < 5: continue
         
@@ -240,9 +238,11 @@ def generate_leaderboard_text(guild, cache):
             f"💀 **LVP:** {leaderboard[-1]['full_name']}")
 
 async def player_autocomplete(interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
-    cache = load_cache()
+    # Also lock the read to prevent reading a half-written file
+    async with CACHE_LOCK:
+        cache = load_cache_internal()
+        
     choices = []
-    # Fast Lookup from keys
     for uid in cache.get("players", {}).keys():
         member = interaction.guild.get_member(int(uid))
         display_name = member.display_name if member else f"Unknown ({uid})"
@@ -258,7 +258,7 @@ async def player_autocomplete(interaction: discord.Interaction, current: str) ->
 async def genplots(interaction: discord.Interaction, player_id: str):
     await interaction.response.defer(thinking=True)
     
-    # Ensure fresh data
+    # Lock handles the update
     cache = await update_data(interaction.channel, interaction.guild)
     
     if player_id not in cache["players"]:
@@ -266,19 +266,17 @@ async def genplots(interaction: discord.Interaction, player_id: str):
         return
 
     stats = cache["players"][player_id]
-    war_history = stats["war_history"] # O(1) Access!
+    war_history = stats["war_history"]
     
     if len(war_history) < 2:
         await interaction.followup.send(f"📉 Not enough games ({len(war_history)}) to generate a graph.")
         return
 
-    # Generate X axis (1, 2, 3...)
     dates = list(range(1, len(war_history) + 1))
     
     user = interaction.guild.get_member(int(player_id))
     name = user.display_name if user else "Unknown Player"
     
-    # Plotting Logic
     plt.style.use('bmh')
     fig, ax = plt.subplots(figsize=(10, 6))
     
@@ -310,7 +308,6 @@ async def genplots(interaction: discord.Interaction, player_id: str):
 @bot.tree.command(name="wordlestats", description="Show the Official Season 1 Leaderboard")
 async def wordlestats(interaction: discord.Interaction):
     await interaction.response.defer(thinking=True)
-    # Check for new messages first
     cache = await update_data(interaction.channel, interaction.guild)
     msg = generate_leaderboard_text(interaction.guild, cache)
     await interaction.followup.send(msg)
@@ -333,8 +330,6 @@ async def on_message(message):
     if message.author.id == WORDLE_BOT_ID:
         if "Your group is on a" in message.content and "day streak" in message.content:
             print(f"🔥 Streak message detected from Official Bot!")
-            
-            # Scan new message -> Update Cache -> Re-render stats
             cache = await update_data(message.channel, message.guild)
             msg = generate_leaderboard_text(message.guild, cache)
             await message.channel.send(msg)
@@ -355,6 +350,7 @@ async def sync(ctx):
 @bot.event
 async def on_ready():
     print(f'Logged in as {bot.user}')
+    print("Ready!")
 
 if __name__ == "__main__":
     token = read_token()
