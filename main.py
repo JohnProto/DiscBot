@@ -14,6 +14,8 @@ FAIL_PENALTY = 7
 STREAK_START_DATE = datetime(2025, 9, 6, tzinfo=timezone.utc)
 CACHE_FILE = "wordle_cache.json"
 
+print("test")
+
 # --- BOT SETUP ---
 class WordleBot(commands.Bot):
     def __init__(self):

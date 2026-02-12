@@ -1,0 +1,5 @@
+token.txt
+wordle_cache.json
+__pycache__/
+*.log
+deploy.sh
