@@ -3,7 +3,7 @@ from discord import app_commands
 from discord.ext import commands
 import re
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import os
 import json
 import unicodedata
@@ -16,16 +16,54 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
 
-# --- CONFIGURATION ---
+# --- FILE PATHS ---
 TOKEN_FILE = 'token.txt'
-# Replace this with the ID of the bot that posts the Wordle scores
-WORDLE_BOT_ID = 123456789012345678 
-FAIL_PENALTY = 7
-STREAK_START_DATE = datetime(2025, 9, 6, tzinfo=timezone.utc)
 CACHE_FILE = "wordle_cache.json"
+CONFIG_FILE = "config.json"
 
 # --- CONCURRENCY PROTECTION ---
 CACHE_LOCK = asyncio.Lock()
+
+# --- CONFIG LOADER ---
+def load_config():
+    defaults = {
+        "wordle_bot_id": 0,
+        "fail_penalty": 7,
+        "streak_start_date": "2025-01-01",
+        "timezone_offset": 0
+    }
+    
+    if not os.path.exists(CONFIG_FILE):
+        print(f"⚠️ {CONFIG_FILE} not found! Creating default...")
+        with open(CONFIG_FILE, 'w') as f: json.dump(defaults, f, indent=4)
+        return parse_config(defaults)
+        
+    try:
+        with open(CONFIG_FILE, 'r') as f:
+            raw = json.load(f)
+            return parse_config(raw)
+    except Exception as e:
+        print(f"❌ Error loading config: {e}")
+        return parse_config(defaults)
+
+def parse_config(raw):
+    # Parse Date String to Datetime Object
+    try:
+        date_str = raw.get("streak_start_date", "2025-01-01")
+        start_date = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    except ValueError:
+        print("❌ Invalid date format in config. Using default.")
+        start_date = datetime(2025, 1, 1, tzinfo=timezone.utc)
+
+    return {
+        "WORDLE_BOT_ID": int(raw.get("wordle_bot_id", 0)),
+        "FAIL_PENALTY": int(raw.get("fail_penalty", 7)),
+        "STREAK_START_DATE": start_date,
+        "TZ": timezone(timedelta(hours=raw.get("timezone_offset", 0)))
+    }
+
+# Load Config Immediately
+CONFIG = load_config()
 
 # --- BOT SETUP ---
 class WordleBot(commands.Bot):
@@ -162,7 +200,7 @@ def process_game_stats(cache, game):
         p_stats["war_history"].append(p_stats["total_war"] + war_gained)
         p_stats["total_war"] += war_gained
         p_stats["total_score"] += score
-        if score < FAIL_PENALTY:
+        if score < CONFIG["FAIL_PENALTY"]:
             p_stats["wins"] += 1
         p_stats["games_played"] += 1
 
@@ -190,9 +228,9 @@ async def update_data(channel, guild, full_rescan=False):
 
         async for message in iterator:
             scan_latest_id = message.id
-            if message.created_at < STREAK_START_DATE: continue
+            if message.created_at < CONFIG["STREAK_START_DATE"]: continue
             
-            daily_results = parse_message_text(message.content, name_map, FAIL_PENALTY)
+            daily_results = parse_message_text(message.content, name_map, CONFIG["FAIL_PENALTY"])
             if daily_results:
                 game_entry = {
                     'id': message.id, 
@@ -239,7 +277,6 @@ def generate_leaderboard_text(guild, cache):
             'war': stats["total_war"], 'games': stats["games_played"]
         })
 
-    # CRITICAL CRASH GUARD
     if not leaderboard:
         return (f"**📊 OFFICIAL WORDLE ANALYTICS**\n"
                 f"*Season 1 Data*\n\n"
@@ -337,7 +374,10 @@ async def wordlestats(interaction: discord.Interaction):
 @bot.tree.command(name="rescan", description="Force re-download history and rebuild cache")
 async def rescan(interaction: discord.Interaction):
     await interaction.response.defer(thinking=True)
-    await interaction.followup.send("♻️ Rescanning history and rebuilding optimizer...")
+    # Reload Config just in case user edited it
+    global CONFIG
+    CONFIG = load_config()
+    await interaction.followup.send("♻️ Reloaded Config & Rescanning history...")
     await update_data(interaction.channel, interaction.guild, full_rescan=True)
     await interaction.channel.send("✅ Done.")
 
@@ -348,7 +388,8 @@ async def on_message(message):
     if message.author == bot.user:
         return
 
-    if message.author.id == WORDLE_BOT_ID:
+    # Use ID from Config
+    if message.author.id == CONFIG["WORDLE_BOT_ID"]:
         if "Your group is on a" in message.content and "day streak" in message.content:
             print(f"🔥 Streak message detected from Official Bot!")
             cache = await update_data(message.channel, message.guild)
