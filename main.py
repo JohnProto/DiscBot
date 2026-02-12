@@ -29,16 +29,21 @@ bot = WordleBot()
 
 # --- UTILITIES ---
 def read_token():
-    # Priority 1: Environment Variable (Pterodactyl)
+    # Priority 1: Check Environment Variable (Secure Pterodactyl way)
     token = os.getenv("DISCORD_TOKEN")
-    if token: return token.strip()
+    if token:
+        print("✅ Found token in Environment Variables.")
+        return token.strip()
     
-    # Priority 2: Local File
+    # Priority 2: Fallback (Local testing)
     try:
-        with open(TOKEN_FILE, 'r') as f: return f.read().strip()
+        with open("token.txt", 'r') as f:
+            print("⚠️ Warning: Reading from token.txt.")
+            return f.read().strip()
     except FileNotFoundError:
-        print(f"Error: {TOKEN_FILE} not found."); exit()
-
+        print("❌ Error: No token found!")
+        exit()
+        
 def clean_name_for_table(name):
     name = unicodedata.normalize('NFKD', name)
     return "".join(c for c in name if c.isalnum() or c in " -_.,")
