@@ -1,6 +1,15 @@
 import discord
+import logging
 from discord.ext import commands
 from config import get_token
+
+# --- LOGGING CONFIGURATION ---
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s | %(levelname)-8s | %(name)s | %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger("bot")
 
 class WordleBot(commands.Bot):
     def __init__(self):
@@ -10,12 +19,13 @@ class WordleBot(commands.Bot):
         super().__init__(command_prefix='!', intents=intents)
 
     async def setup_hook(self):
-        print("⚙️ Loading Cogs...")
+        logger.info("⚙️ Loading Cogs...")
         await self.load_extension("cogs")
-        print("✅ Bot is ready!")
+        logger.info("✅ Bot setup complete!")
 
     async def on_ready(self):
-        print(f'Logged in as {self.user}')
+        logger.info(f'🚀 Logged in as {self.user} (ID: {self.user.id})')
+        logger.info('Ready!')
 
 bot = WordleBot()
 
@@ -24,6 +34,7 @@ bot = WordleBot()
 @commands.is_owner()
 async def sync(ctx):
     await bot.tree.sync(guild=ctx.guild)
+    logger.info(f"Commands synced to guild: {ctx.guild.name}")
     await ctx.send("Synced!")
 
 if __name__ == "__main__":

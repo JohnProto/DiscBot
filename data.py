@@ -1,9 +1,13 @@
 import os
 import json
 import asyncio
+import logging
 import discord
 from config import CONFIG
 from utils import parse_wordle_message, get_smart_name_map
+
+# Module Logger
+logger = logging.getLogger("data")
 
 CACHE_FILE = "wordle_cache.json"
 CACHE_LOCK = asyncio.Lock()
@@ -12,7 +16,6 @@ def get_empty_cache():
     return {"last_message_id": None, "games": [], "players": {}}
 
 def _process_game_stats(cache, game):
-    """Internal: Updates player stats based on a single game."""
     scores = list(game['scores'].values())
     if not scores: return
     day_avg = sum(scores) / len(scores)
@@ -34,7 +37,7 @@ def _process_game_stats(cache, game):
         p["games_played"] += 1
 
 def _rebuild_stats(cache):
-    print("🔄 Rebuilding Player Stats...")
+    logger.info("🔄 Rebuilding Player Stats Cache...")
     cache["players"] = {}
     cache["games"].sort(key=lambda x: x['date'])
     for game in cache["games"]:
@@ -42,22 +45,21 @@ def _rebuild_stats(cache):
     return cache
 
 async def load_cache():
-    """Thread-safe load."""
     if not os.path.exists(CACHE_FILE): return get_empty_cache()
     try:
         with open(CACHE_FILE, 'r') as f:
             data = json.load(f)
-            if "players" not in data: # Migration
+            if "players" not in data: 
+                logger.warning("⚠️ Old cache detected. Triggering migration.")
                 data = _rebuild_stats(data)
                 with open(CACHE_FILE, 'w') as f2: json.dump(data, f2)
             return data
-    except: return get_empty_cache()
+    except Exception as e:
+        logger.error(f"❌ Corrupt cache file: {e}")
+        return get_empty_cache()
 
 async def update_data(channel, guild, full_rescan=False):
-    """Main function to scan channel and update JSON."""
     async with CACHE_LOCK:
-        # We assume load_cache() logic is duplicated here for atomic safety 
-        # or we read the file directly inside the lock.
         if os.path.exists(CACHE_FILE):
              with open(CACHE_FILE, 'r') as f: cache = json.load(f)
         else: cache = get_empty_cache()
@@ -67,14 +69,15 @@ async def update_data(channel, guild, full_rescan=False):
         name_map = get_smart_name_map(guild)
         
         if full_rescan or cache["last_message_id"] is None:
-            print("Performing FULL scan...")
+            logger.info("Performing FULL history scan...")
             iterator = channel.history(limit=None, oldest_first=True)
-            cache = get_empty_cache() # Reset
+            cache = get_empty_cache()
         else:
             try:
                 last_obj = discord.Object(id=cache["last_message_id"])
                 iterator = channel.history(limit=None, after=last_obj, oldest_first=True)
             except:
+                logger.warning("Last message ID not found in history. Rescanning from start.")
                 iterator = channel.history(limit=None, oldest_first=True)
 
         new_games = []
@@ -92,10 +95,9 @@ async def update_data(channel, guild, full_rescan=False):
                     'scores': {uid: s for uid, s in results}
                 })
 
-        # Save if changed
         if new_games or scan_id != cache["last_message_id"]:
             if new_games:
-                print(f"Found {len(new_games)} new games.")
+                logger.info(f"✅ Found {len(new_games)} new games. Updating stats.")
                 for game in new_games:
                     cache["games"].append(game)
                     _process_game_stats(cache, game)

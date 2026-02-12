@@ -1,17 +1,20 @@
 import discord
+import logging
 from discord import app_commands
 from discord.ext import commands
 from config import CONFIG
 import data
 import analytics
-from utils import clean_name
+
+# Module Logger
+logger = logging.getLogger("cogs")
 
 class WordleCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
     async def player_autocomplete(self, interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
-        cache = await data.load_cache() # Read-only load
+        cache = await data.load_cache()
         choices = []
         for uid in cache.get("players", {}).keys():
             member = interaction.guild.get_member(int(uid))
@@ -24,6 +27,9 @@ class WordleCommands(commands.Cog):
     @app_commands.autocomplete(player_id=player_autocomplete)
     async def genplots(self, interaction: discord.Interaction, player_id: str):
         await interaction.response.defer(thinking=True)
+        # Log who ran the command
+        logger.info(f"Command /genplots used by {interaction.user.name}")
+        
         cache = await data.update_data(interaction.channel, interaction.guild)
         
         if player_id not in cache["players"]:
@@ -44,6 +50,8 @@ class WordleCommands(commands.Cog):
     @app_commands.command(name="wordlestats", description="Show Leaderboard")
     async def wordlestats(self, interaction: discord.Interaction):
         await interaction.response.defer(thinking=True)
+        logger.info(f"Command /wordlestats used by {interaction.user.name}")
+        
         cache = await data.update_data(interaction.channel, interaction.guild)
         msg = analytics.generate_leaderboard(interaction.guild, cache)
         await interaction.followup.send(msg)
@@ -51,7 +59,9 @@ class WordleCommands(commands.Cog):
     @app_commands.command(name="rescan", description="Force Rescan")
     async def rescan(self, interaction: discord.Interaction):
         await interaction.response.defer()
-        await interaction.followup.send("♻️ Rescanning...")
+        logger.warning(f"MANUAL RESCAN triggered by {interaction.user.name}")
+        
+        await interaction.followup.send("♻️ Rescanning history...")
         await data.update_data(interaction.channel, interaction.guild, full_rescan=True)
         await interaction.channel.send("✅ Done.")
 
@@ -61,7 +71,8 @@ class WordleCommands(commands.Cog):
         
         if message.author.id == CONFIG["WORDLE_BOT_ID"]:
             if "Your group is on a" in message.content and "day streak" in message.content:
-                print("🔥 Official Streak Detected!")
+                logger.info(f"🔥 Official Streak Detected in {message.channel.name}!")
+                
                 cache = await data.update_data(message.channel, message.guild)
                 msg = analytics.generate_leaderboard(message.guild, cache)
                 await message.channel.send(msg)

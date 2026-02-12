@@ -1,6 +1,10 @@
 import json
 import os
+import logging
 from datetime import datetime, timezone, timedelta
+
+# Create module-specific logger
+logger = logging.getLogger("config")
 
 CONFIG_FILE = "config.json"
 TOKEN_FILE = "token.txt"
@@ -13,24 +17,22 @@ def load_config():
         "timezone_offset": 0
     }
     
-    # Create default if missing
     if not os.path.exists(CONFIG_FILE):
-        print(f"⚠️ {CONFIG_FILE} not found! Creating default...")
+        logger.warning(f"⚠️ {CONFIG_FILE} not found! Creating default...")
         with open(CONFIG_FILE, 'w') as f: json.dump(defaults, f, indent=4)
         raw = defaults
     else:
         try:
             with open(CONFIG_FILE, 'r') as f: raw = json.load(f)
         except Exception as e:
-            print(f"❌ Error loading config: {e}")
+            logger.error(f"❌ Error loading config: {e}")
             raw = defaults
 
-    # Parse Date
     try:
         date_str = raw.get("streak_start_date", "2025-01-01")
         start_date = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
     except ValueError:
-        print("❌ Invalid date format. Using default.")
+        logger.error("❌ Invalid date format. Using default.")
         start_date = datetime(2025, 1, 1, tzinfo=timezone.utc)
 
     return {
@@ -40,14 +42,17 @@ def load_config():
         "TZ": timezone(timedelta(hours=raw.get("timezone_offset", 0)))
     }
 
-# Load immediately on import
 CONFIG = load_config()
 
 def get_token():
     token = os.getenv("DISCORD_TOKEN")
-    if token: return token.strip()
+    if token: 
+        logger.info("✅ Found token in Environment Variables.")
+        return token.strip()
     try:
-        with open(TOKEN_FILE, 'r') as f: return f.read().strip()
+        with open(TOKEN_FILE, 'r') as f: 
+            logger.warning("⚠️ Reading token from local file (Not recommended for prod).")
+            return f.read().strip()
     except FileNotFoundError:
-        print(f"❌ Error: {TOKEN_FILE} or DISCORD_TOKEN env var not found.")
+        logger.critical("❌ Error: No token found (Env Var or File). Exiting.")
         exit()
