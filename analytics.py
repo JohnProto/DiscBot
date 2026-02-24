@@ -56,3 +56,35 @@ def render_leaderboard_table(stats_list: List[Dict[str, Any]], cache: Dict[str, 
             f"```text\n" + "\n".join(table_lines) + "\n```\n"
             f"👑 **MVP:** {stats_list[0]['full_name']}\n"
             f"💀 **LVP:** {stats_list[-1]['full_name']}")
+
+def generate_war_graph(user_name: str, war_history: List[float]) -> discord.File:
+    """
+    Generates a beautiful matplotlib graph of a player's WAR history.
+    """
+    dates = list(range(1, len(war_history) + 1))
+    
+    plt.style.use('bmh')
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    ax.plot(dates, war_history, color='#1f77b4', linewidth=2.5, label='Cumulative WAR')
+    
+    wars_arr = np.array(war_history)
+    ax.fill_between(dates, war_history, 0, where=(wars_arr >= 0), color='green', alpha=0.15, interpolate=True)
+    ax.fill_between(dates, war_history, 0, where=(wars_arr < 0), color='red', alpha=0.15, interpolate=True)
+    
+    ax.axhline(0, color='black', linewidth=1.5, alpha=0.5)
+    ax.set_title(f"Contribution History (WAR): {user_name}", fontsize=14, fontweight='bold')
+    ax.set_xlabel("Games Played")
+    ax.set_ylabel("Total WAR")
+    ax.grid(True, alpha=0.3)
+    
+    last_war = war_history[-1]
+    stats_text = f"Current WAR: {last_war:+.2f}\nGames: {len(war_history)}"
+    ax.text(0.02, 0.95, stats_text, transform=ax.transAxes, 
+            verticalalignment='top', bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', dpi=100, bbox_inches='tight')
+    buf.seek(0)
+    plt.close(fig)
+    return discord.File(buf, filename=f"{clean_name(user_name)}_war.png")
