@@ -103,22 +103,33 @@ async def update_data(channel: discord.TextChannel, guild: discord.Guild, full_r
     global _last_update_time
     
     async with CACHE_LOCK:
+        # 1. Load
         if os.path.exists(CACHE_FILE):
              with open(CACHE_FILE, 'r') as f: cache = json.load(f)
         else: cache = get_empty_cache()
             
+        # --- THE FIX IS HERE ---
+        # If we are doing a full rescan, we MUST wipe the old data first!
+        if full_rescan:
+            logger.info("Wiping old cache for a clean rescan...")
+            cache = get_empty_cache()
+        # -----------------------
+            
         if "players" not in cache: cache = _rebuild_stats(cache)
         if "current_streak" not in cache: cache["current_streak"] = 0
 
+        # 2. Debounce
         now = time.time()
         if not full_rescan and (now - _last_update_time < CACHE_TTL):
             return cache
 
+        # 3. Scan
         name_map = get_smart_name_map(guild)
         last_id = None if full_rescan else cache["last_message_id"]
         
         new_games = await _scan_discord_history(channel, last_id, CONFIG["STREAK_START_DATE"], name_map)
 
+        # 4. Save
         if new_games:
             logger.info(f"✅ Found {len(new_games)} new games.")
             for game in new_games:
