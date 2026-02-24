@@ -2,23 +2,59 @@ import os
 import json
 import asyncio
 import logging
-import time  # <--- NEW IMPORT
+import time
 import discord
+from typing import Dict, List, Any, Optional
 from config import CONFIG
 from utils import parse_wordle_message, get_smart_name_map
 
-# Module Logger
 logger = logging.getLogger("data")
 
 CACHE_FILE = "wordle_cache.json"
 CACHE_LOCK = asyncio.Lock()
+CACHE_TTL = 60
+_last_update_time = 0
 
-# DEBOUNCE CONFIGURATION
-CACHE_TTL = 60  # Seconds to wait before checking Discord again
-_last_update_time = 0  # Tracks when we last talked to Discord
+def get_empty_cache() -> Dict[str, Any]:
+    # Added current_streak to track the highest streak found
+    return {"last_message_id": None, "games": [], "players": {}, "current_streak": 0}
 
-def get_empty_cache():
-    return {"last_message_id": None, "games": [], "players": {}}
+async def _scan_discord_history(channel: discord.TextChannel, 
+                              start_id: Optional[int], 
+                              start_date: float, 
+                              name_map: Dict[str, str]) -> List[Dict[str, Any]]:
+    new_games = []
+    
+    if start_id:
+        try:
+            start_obj = discord.Object(id=start_id)
+            iterator = channel.history(limit=None, after=start_obj, oldest_first=True)
+        except:
+            logger.warning("Invalid Message ID. Resetting scan to start date.")
+            iterator = channel.history(limit=None, oldest_first=True, after=start_date)
+    else:
+        logger.info("Performing FULL scan.")
+        iterator = channel.history(limit=None, oldest_first=True, after=start_date)
+
+    processed = 0
+    async for msg in iterator:
+        processed += 1
+        if processed % 500 == 0: logger.info(f"🔄 Scanning... {processed} messages.")
+
+        if msg.created_at < start_date: continue
+        if msg.author.id != CONFIG["WORDLE_BOT_ID"]: continue
+
+        # Now unpacks BOTH results and the streak
+        results, streak = parse_wordle_message(msg.content, name_map, CONFIG["FAIL_PENALTY"])
+        if results:
+            new_games.append({
+                'id': msg.id,
+                'date': msg.created_at.timestamp(),
+                'scores': {uid: s for uid, s in results},
+                'streak': streak  # <--- NEW
+            })
+            
+    return new_games
 
 def _process_game_stats(cache, game):
     scores = list(game['scores'].values())
@@ -63,86 +99,40 @@ async def load_cache():
         logger.error(f"❌ Corrupt cache file: {e}")
         return get_empty_cache()
 
-async def update_data(channel, guild, full_rescan=False):
+async def update_data(channel: discord.TextChannel, guild: discord.Guild, full_rescan: bool = False) -> Dict[str, Any]:
     global _last_update_time
     
     async with CACHE_LOCK:
-        # 1. Load Cache from Disk
         if os.path.exists(CACHE_FILE):
              with open(CACHE_FILE, 'r') as f: cache = json.load(f)
         else: cache = get_empty_cache()
             
         if "players" not in cache: cache = _rebuild_stats(cache)
+        if "current_streak" not in cache: cache["current_streak"] = 0
 
-        # 2. DEBOUNCE CHECK (The Optimization)
-        # If not forcing a rescan, AND we updated recently... SKIP DISCORD.
         now = time.time()
         if not full_rescan and (now - _last_update_time < CACHE_TTL):
-            # logger.info("⏳ Cache is fresh. Skipping Discord scan.")
             return cache
 
-        # ---------------------------------------------------------
-        # If we get here, we are actually going to scan Discord.
-        # ---------------------------------------------------------
-
         name_map = get_smart_name_map(guild)
+        last_id = None if full_rescan else cache["last_message_id"]
         
-        if full_rescan or cache["last_message_id"] is None:
-            logger.info(f"Performing FULL scan (Skipping messages before {CONFIG['STREAK_START_DATE']})...")
-            iterator = channel.history(
-                limit=None, 
-                oldest_first=True, 
-                after=CONFIG["STREAK_START_DATE"]
-            )
-            cache = get_empty_cache() 
-        else:
-            try:
-                last_obj = discord.Object(id=cache["last_message_id"])
-                iterator = channel.history(limit=None, after=last_obj, oldest_first=True)
-            except:
-                logger.warning("Last message ID invalid. Rescanning from start date.")
-                iterator = channel.history(
-                    limit=None, 
-                    oldest_first=True, 
-                    after=CONFIG["STREAK_START_DATE"]
-                )
+        new_games = await _scan_discord_history(channel, last_id, CONFIG["STREAK_START_DATE"], name_map)
 
-        new_games = []
-        scan_id = cache["last_message_id"]
-        processed_count = 0
-
-        async for msg in iterator:
-            processed_count += 1
-            scan_id = msg.id
+        if new_games:
+            logger.info(f"✅ Found {len(new_games)} new games.")
+            for game in new_games:
+                cache["games"].append(game)
+                _process_game_stats(cache, game)
+                
+                # Keep track of the highest streak number seen
+                if game.get("streak", 0) > cache.get("current_streak", 0):
+                    cache["current_streak"] = game["streak"]
             
-            if processed_count % 500 == 0:
-                logger.info(f"🔄 Scanning... {processed_count} messages processed.")
-
-            if msg.created_at < CONFIG["STREAK_START_DATE"]: continue
-            if msg.author.id != CONFIG["WORDLE_BOT_ID"]: continue 
-
-            results = parse_wordle_message(msg.content, name_map, CONFIG["FAIL_PENALTY"])
-            if results:
-                new_games.append({
-                    'id': msg.id,
-                    'date': msg.created_at.timestamp(),
-                    'scores': {uid: s for uid, s in results}
-                })
-
-        # Save Results
-        if new_games or scan_id != cache["last_message_id"]:
             if new_games:
-                logger.info(f"✅ Scan Complete. Found {len(new_games)} new games.")
-                for game in new_games:
-                    cache["games"].append(game)
-                    _process_game_stats(cache, game)
-            else:
-                logger.info("✅ Scan Complete. No new games.")
+                cache["last_message_id"] = new_games[-1]['id']
             
-            cache["last_message_id"] = scan_id
             with open(CACHE_FILE, 'w') as f: json.dump(cache, f, indent=4)
         
-        # Update the timestamp so we don't scan again for 60s
         _last_update_time = time.time()
-        
         return cache

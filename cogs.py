@@ -6,7 +6,6 @@ from config import CONFIG
 import data
 import analytics
 
-# Module Logger
 logger = logging.getLogger("cogs")
 
 class WordleCommands(commands.Cog):
@@ -27,7 +26,6 @@ class WordleCommands(commands.Cog):
     @app_commands.autocomplete(player_id=player_autocomplete)
     async def genplots(self, interaction: discord.Interaction, player_id: str):
         await interaction.response.defer(thinking=True)
-        # Log who ran the command
         logger.info(f"Command /genplots used by {interaction.user.name}")
         
         cache = await data.update_data(interaction.channel, interaction.guild)
@@ -53,7 +51,11 @@ class WordleCommands(commands.Cog):
         logger.info(f"Command /wordlestats used by {interaction.user.name}")
         
         cache = await data.update_data(interaction.channel, interaction.guild)
-        msg = analytics.generate_leaderboard(interaction.guild, cache)
+        stats = analytics.get_leaderboard_stats(interaction.guild, cache)
+        
+        # FIX: Now we pass the full cache so it can read the streak number
+        msg = analytics.render_leaderboard_table(stats, cache) 
+        
         await interaction.followup.send(msg)
 
     @app_commands.command(name="rescan", description="Force Rescan")
@@ -61,7 +63,7 @@ class WordleCommands(commands.Cog):
         await interaction.response.defer()
         logger.warning(f"MANUAL RESCAN triggered by {interaction.user.name}")
         
-        await interaction.followup.send("♻️ Rescanning history...")
+        await interaction.followup.send("♻️ Rescanning history and wiping old data...")
         await data.update_data(interaction.channel, interaction.guild, full_rescan=True)
         await interaction.channel.send("✅ Done.")
 
@@ -74,7 +76,11 @@ class WordleCommands(commands.Cog):
                 logger.info(f"🔥 Official Streak Detected in {message.channel.name}!")
                 
                 cache = await data.update_data(message.channel, message.guild)
-                msg = analytics.generate_leaderboard(message.guild, cache)
+                stats = analytics.get_leaderboard_stats(message.guild, cache)
+                
+                # FIX: Here too!
+                msg = analytics.render_leaderboard_table(stats, cache)
+                
                 await message.channel.send(msg)
 
 async def setup(bot):
