@@ -14,6 +14,8 @@ def load_config():
         "wordle_bot_id": 0,
         "fail_penalty": 7,
         "streak_start_date": "2025-01-01",
+        "season_name": "Season 1",
+        "min_games_for_leaderboard": 5, # <--- Added this to defaults!
         "timezone_offset": 0
     }
     
@@ -28,18 +30,23 @@ def load_config():
             logger.error(f"❌ Error loading config: {e}")
             raw = defaults
 
+    return parse_config(raw)
+
+def parse_config(raw):
+    # Parse Date String to Datetime Object
     try:
         date_str = raw.get("streak_start_date", "2025-01-01")
         start_date = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
     except ValueError:
-        logger.error("❌ Invalid date format. Using default.")
+        logger.error("❌ Invalid date format in config. Using default.")
         start_date = datetime(2025, 1, 1, tzinfo=timezone.utc)
 
     return {
         "WORDLE_BOT_ID": int(raw.get("wordle_bot_id", 0)),
         "FAIL_PENALTY": int(raw.get("fail_penalty", 7)),
         "STREAK_START_DATE": start_date,
-        "SEASON_NAME": raw.get("season_name", "Season 1"), # <--- NEW
+        "SEASON_NAME": raw.get("season_name", "Season 1"),
+        "MIN_GAMES": int(raw.get("min_games_for_leaderboard", 5)), # <--- THE FIX
         "TZ": timezone(timedelta(hours=raw.get("timezone_offset", 0)))
     }
 
