@@ -70,9 +70,14 @@ async def on_app_command_error(interaction: discord.Interaction, error: app_comm
 @bot.command()
 @commands.is_owner()
 async def sync(ctx):
-    await bot.tree.sync(guild=ctx.guild)
+    # This line was missing! It copies the commands to your specific server.
+    bot.tree.copy_global_to(guild=ctx.guild)
+    
+    # Now it actually syncs them
+    synced = await bot.tree.sync(guild=ctx.guild)
+    
     logger.info(f"Commands synced to guild: {ctx.guild.name}")
-    await ctx.send("Synced!")
+    await ctx.send(f"✅ Synced {len(synced)} commands to this server!")
 
 if __name__ == "__main__":
     bot.run(get_token())
