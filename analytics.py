@@ -88,3 +88,85 @@ def generate_war_graph(user_name: str, war_history: List[float]) -> discord.File
     buf.seek(0)
     plt.close(fig)
     return discord.File(buf, filename=f"{clean_name(user_name)}_war.png")
+
+def generate_comparison_graph(guild: discord.Guild, cache: Dict[str, Any], uids: List[str]) -> discord.File:
+    """
+    Generates a chronological multi-line graph comparing players.
+    Uses gray dotted lines for missed days to expose AFK players.
+    """
+    # 1. Map out exactly what WAR each player had on each specific streak day
+    player_timelines = {uid: {} for uid in uids}
+    current_war = {uid: 0.0 for uid in uids}
+
+    for game in cache['games']:
+        streak = game.get('streak')
+        if not streak: continue
+
+        scores = list(game['scores'].values())
+        if not scores: continue
+        day_avg = sum(scores) / len(scores)
+
+        for uid in uids:
+            if uid in game['scores']:
+                score = game['scores'][uid]
+                current_war[uid] += (day_avg - score)
+                player_timelines[uid][streak] = current_war[uid]
+
+    # 2. Start Drawing
+    plt.style.use('bmh')
+    fig, ax = plt.subplots(figsize=(12, 7))
+    colors = ['#1f77b4', '#d62728', '#2ca02c', '#ff7f0e', '#9467bd']
+    
+    all_streaks = sorted(list(set(g.get('streak') for g in cache['games'] if g.get('streak'))))
+    max_overall_streak = all_streaks[-1] if all_streaks else 0
+
+    for idx, uid in enumerate(uids):
+        user = guild.get_member(int(uid))
+        name = user.display_name if user else f"Player {uid}"
+        color = colors[idx % len(colors)]
+
+        timeline = player_timelines[uid]
+        if not timeline: continue
+
+        played_streaks = sorted(timeline.keys())
+        wars = [timeline[s] for s in played_streaks]
+
+        # Draw the actual dots where they played
+        ax.plot(played_streaks, wars, marker='o', markersize=5, linestyle='', color=color)
+
+        # Connect the dots with our logic
+        for i in range(len(played_streaks) - 1):
+            s1, s2 = played_streaks[i], played_streaks[i+1]
+            w1, w2 = wars[i], wars[i+1]
+
+            if s2 - s1 == 1:
+                # Played consecutive days: Solid line
+                ax.plot([s1, s2], [w1, w2], linestyle='-', color=color, linewidth=2.5)
+            else:
+                # Skipped days: Draw horizontal AFK flatline in gray
+                ax.plot([s1, s2-1], [w1, w1], linestyle=':', color='gray', linewidth=2, alpha=0.6)
+                # Draw the jump when they finally played again
+                ax.plot([s2-1, s2], [w1, w2], linestyle='--', color=color, linewidth=2, alpha=0.8)
+
+        # If they haven't played up to the CURRENT day, draw a final gray flatline
+        last_played = played_streaks[-1]
+        last_war = wars[-1]
+        if last_played < max_overall_streak:
+            ax.plot([last_played, max_overall_streak], [last_war, last_war], linestyle=':', color='gray', linewidth=2, alpha=0.6)
+
+        # Add them to the legend with their final score
+        ax.plot([], [], color=color, linewidth=3, label=f"{name} ({last_war:+.2f})")
+
+    # Add the Server Average baseline (WAR = 0)
+    ax.axhline(0, color='black', linewidth=1.5, alpha=0.8, linestyle='--')
+    
+    ax.set_title("Chronological Head-to-Head Comparison", fontsize=16, fontweight='bold')
+    ax.set_xlabel("Official Streak Day")
+    ax.set_ylabel("Total WAR")
+    ax.legend(loc="upper left")
+    
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', dpi=100, bbox_inches='tight')
+    buf.seek(0)
+    plt.close(fig)
+    return discord.File(buf, filename="head_to_head.png")

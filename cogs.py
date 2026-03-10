@@ -21,6 +21,33 @@ class WordleCommands(commands.Cog):
             if current.lower() in display.lower():
                 choices.append(app_commands.Choice(name=display, value=uid))
         return choices[:25]
+    
+    @app_commands.command(name="compare", description="[WIP] Compare player graphs")
+    @app_commands.autocomplete(player1=player_autocomplete, player2=player_autocomplete)
+    async def compare(self, interaction: discord.Interaction, player1: str, player2: str):
+        # 1. Hide the "Bot is thinking..." message from the public
+        await interaction.response.defer(thinking=True, ephemeral=True)
+        
+        # 2. THE BIOMETRIC LOCK (Replace with your actual Discord ID!)
+        YOUR_DISCORD_ID = 1003788126508040334 
+        
+        if interaction.user.id != YOUR_DISCORD_ID:
+            logger.warning(f"Unauthorized access attempt to /compare by {interaction.user.name}")
+            await interaction.followup.send("🚧 This command is currently in development.", ephemeral=True)
+            return
+            
+        logger.info(f"Stealth command /compare used by {interaction.user.name}")
+        
+        cache = await data.update_data(interaction.channel, interaction.guild)
+        
+        # Make sure both players exist
+        if player1 not in cache["players"] or player2 not in cache["players"]:
+            await interaction.followup.send("❌ Missing data for one or both players.", ephemeral=True)
+            return
+
+        # Generate the comparison graph
+        file = analytics.generate_comparison_graph(interaction.guild, cache, [player1, player2])
+        await interaction.followup.send(f"🤫 **Confidential Head-to-Head**", file=file, ephemeral=True)
 
     @app_commands.command(name="genplots", description="Generate WAR graph")
     @app_commands.autocomplete(player_id=player_autocomplete)
