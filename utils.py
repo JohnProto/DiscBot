@@ -29,7 +29,6 @@ def parse_wordle_message(content, name_map, fail_penalty):
     results = []
     streak = 0
     
-    # Extract the streak number dynamically
     streak_match = streak_pattern.search(content)
     if streak_match:
         streak = int(streak_match.group(1))
@@ -50,19 +49,22 @@ def parse_wordle_message(content, name_map, fail_penalty):
                     found_users.add(uid)
                     user_part = re.sub(f"<@!?{uid}>", "", user_part)
                 
-                # 2. Unpinged Text Names (@Steve, @Bob)
-                # FIX: Split by comma instead of space!
-                for chunk in user_part.split(','):
-                    raw_text = chunk.replace('@', '').strip().lower()
-                    if not raw_text: continue
+                # 2. Unpinged Text Names 
+                # THE FIX: Split by '@' to cleanly separate multiple un-pinged names on the same line
+                for chunk in user_part.split('@'):
+                    raw_text = chunk.strip().lower()
+                    if not raw_text: continue # Skip empty chunks
                     
+                    # Exact Match
                     if raw_text in name_map:
                         found_users.add(name_map[raw_text])
                         continue
                     
-                    clean_text = clean_name(raw_text)
+                    # Clean Match (removes emojis, trailing spaces)
+                    clean_text = clean_name(raw_text).strip()
                     if clean_text in name_map:
                         found_users.add(name_map[clean_text])
+                        continue
 
                 for uid in found_users: results.append((uid, score))
                 
