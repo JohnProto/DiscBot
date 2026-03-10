@@ -15,27 +15,46 @@ class WordleCommands(commands.Cog):
     async def player_autocomplete(self, interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
         cache = await data.load_cache()
         choices = []
+        
+        # 1. Read what the user has ALREADY selected in the other boxes
+        selected_uids = [
+            getattr(interaction.namespace, 'player1', None),
+            getattr(interaction.namespace, 'player2', None),
+            getattr(interaction.namespace, 'player3', None),
+            getattr(interaction.namespace, 'player4', None),
+            getattr(interaction.namespace, 'player5', None),
+        ]
+        
+        # 2. Add the "ALL PLAYERS" shortcut if they haven't picked it yet
+        if "all" in current.lower() and "ALL" not in selected_uids:
+            choices.append(app_commands.Choice(name="🌟 ALL PLAYERS 🌟", value="ALL"))
+            
+        # 3. Build the rest of the list, skipping anyone already selected
         for uid in cache.get("players", {}).keys():
+            if uid in selected_uids:
+                continue # Skip Max if Max is already in box 1!
+                
             member = interaction.guild.get_member(int(uid))
             display = member.display_name if member else f"Unknown ({uid})"
+            
             if current.lower() in display.lower():
                 choices.append(app_commands.Choice(name=display, value=uid))
+                
         return choices[:25]
     
-    @app_commands.command(name="compare", description="[WIP] Compare multiple player graphs")
+    @app_commands.command(name="compare", description="[WIP] Compare player graphs (Choose up to 5, or ALL)")
     @app_commands.autocomplete(player1=player_autocomplete, player2=player_autocomplete, player3=player_autocomplete, player4=player_autocomplete, player5=player_autocomplete)
     async def compare(self, interaction: discord.Interaction, 
-                      player1: str = None, 
+                      player1: str, 
                       player2: str = None, 
                       player3: str = None, 
                       player4: str = None, 
-                      player5: str = None,
-                      compare_all: bool = False):
+                      player5: str = None):
         
         await interaction.response.defer(thinking=True, ephemeral=True)
         
         # --- THE BIOMETRIC LOCK ---
-        YOUR_DISCORD_ID = 1003788126508040334
+        YOUR_DISCORD_ID = 123456789012345678 # <-- REPLACE THIS!
         
         if interaction.user.id != YOUR_DISCORD_ID:
             logger.warning(f"Unauthorized access attempt to /compare by {interaction.user.name}")
@@ -45,23 +64,26 @@ class WordleCommands(commands.Cog):
         logger.info(f"Stealth command /compare used by {interaction.user.name}")
         cache = await data.update_data(interaction.channel, interaction.guild)
         
+        # Gather whatever they typed into the boxes
+        inputs = [player1, player2, player3, player4, player5]
+        inputs = [p for p in inputs if p is not None]
+        
         uids_to_compare = []
         
-        # Logic: If they chose "All", grab everyone who qualifies for the leaderboard
-        if compare_all:
+        # Logic: Did they select the "ALL PLAYERS" fake user?
+        if "ALL" in inputs:
             for uid, stats in cache["players"].items():
                 if stats["games_played"] >= CONFIG.get("MIN_GAMES", 5):
                     uids_to_compare.append(uid)
         else:
-            # Logic: Collect whichever specific players they typed in
-            inputs = [player1, player2, player3, player4, player5]
+            # Logic: Just plot the specific players they picked
             for p in inputs:
-                if p and p in cache["players"] and p not in uids_to_compare:
+                if p in cache["players"] and p not in uids_to_compare:
                     uids_to_compare.append(p)
                     
         # Sanity check
         if len(uids_to_compare) < 2:
-            await interaction.followup.send("❌ Please select at least 2 valid players, or set `compare_all` to True.", ephemeral=True)
+            await interaction.followup.send("❌ Please select at least 2 different players, or choose '🌟 ALL PLAYERS 🌟'.", ephemeral=True)
             return
 
         # Generate the graph
