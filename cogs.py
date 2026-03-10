@@ -54,7 +54,7 @@ class WordleCommands(commands.Cog):
         await interaction.response.defer(thinking=True, ephemeral=True)
         
         # --- THE BIOMETRIC LOCK ---
-        YOUR_DISCORD_ID = 123456789012345678 # <-- REPLACE THIS!
+        YOUR_DISCORD_ID = 1003788126508040334
         
         if interaction.user.id != YOUR_DISCORD_ID:
             logger.warning(f"Unauthorized access attempt to /compare by {interaction.user.name}")
