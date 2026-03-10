@@ -22,14 +22,20 @@ class WordleCommands(commands.Cog):
                 choices.append(app_commands.Choice(name=display, value=uid))
         return choices[:25]
     
-    @app_commands.command(name="compare", description="[WIP] Compare player graphs")
-    @app_commands.autocomplete(player1=player_autocomplete, player2=player_autocomplete)
-    async def compare(self, interaction: discord.Interaction, player1: str, player2: str):
-        # 1. Hide the "Bot is thinking..." message from the public
+    @app_commands.command(name="compare", description="[WIP] Compare multiple player graphs")
+    @app_commands.autocomplete(player1=player_autocomplete, player2=player_autocomplete, player3=player_autocomplete, player4=player_autocomplete, player5=player_autocomplete)
+    async def compare(self, interaction: discord.Interaction, 
+                      player1: str = None, 
+                      player2: str = None, 
+                      player3: str = None, 
+                      player4: str = None, 
+                      player5: str = None,
+                      compare_all: bool = False):
+        
         await interaction.response.defer(thinking=True, ephemeral=True)
         
-        # 2. THE BIOMETRIC LOCK (Replace with your actual Discord ID!)
-        YOUR_DISCORD_ID = 1003788126508040334 
+        # --- THE BIOMETRIC LOCK ---
+        YOUR_DISCORD_ID = 1003788126508040334
         
         if interaction.user.id != YOUR_DISCORD_ID:
             logger.warning(f"Unauthorized access attempt to /compare by {interaction.user.name}")
@@ -37,17 +43,30 @@ class WordleCommands(commands.Cog):
             return
             
         logger.info(f"Stealth command /compare used by {interaction.user.name}")
-        
         cache = await data.update_data(interaction.channel, interaction.guild)
         
-        # Make sure both players exist
-        if player1 not in cache["players"] or player2 not in cache["players"]:
-            await interaction.followup.send("❌ Missing data for one or both players.", ephemeral=True)
+        uids_to_compare = []
+        
+        # Logic: If they chose "All", grab everyone who qualifies for the leaderboard
+        if compare_all:
+            for uid, stats in cache["players"].items():
+                if stats["games_played"] >= CONFIG.get("MIN_GAMES", 5):
+                    uids_to_compare.append(uid)
+        else:
+            # Logic: Collect whichever specific players they typed in
+            inputs = [player1, player2, player3, player4, player5]
+            for p in inputs:
+                if p and p in cache["players"] and p not in uids_to_compare:
+                    uids_to_compare.append(p)
+                    
+        # Sanity check
+        if len(uids_to_compare) < 2:
+            await interaction.followup.send("❌ Please select at least 2 valid players, or set `compare_all` to True.", ephemeral=True)
             return
 
-        # Generate the comparison graph
-        file = analytics.generate_comparison_graph(interaction.guild, cache, [player1, player2])
-        await interaction.followup.send(f"🤫 **Confidential Head-to-Head**", file=file, ephemeral=True)
+        # Generate the graph
+        file = analytics.generate_comparison_graph(interaction.guild, cache, uids_to_compare)
+        await interaction.followup.send(f"🤫 **Confidential Comparison ({len(uids_to_compare)} Players)**", file=file, ephemeral=True)
 
     @app_commands.command(name="genplots", description="Generate WAR graph")
     @app_commands.autocomplete(player_id=player_autocomplete)

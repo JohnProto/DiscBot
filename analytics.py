@@ -116,7 +116,15 @@ def generate_comparison_graph(guild: discord.Guild, cache: Dict[str, Any], uids:
     # Use 'seaborn-v0_8-notebook' or 'bmh' style for a modern look
     plt.style.use('bmh')
     fig, ax = plt.subplots(figsize=(12, 7))
-    colors = ['#1f77b4', '#d62728', '#2ca02c', '#ff7f0e', '#9467bd']
+    # Start Drawing - Setup Aesthetics
+    plt.style.use('bmh')
+    fig, ax = plt.subplots(figsize=(12, 7))
+    
+    # THE FIX: Expanded to 10 highly distinct colors for "Compare All" scenarios
+    colors = [
+        '#1f77b4', '#d62728', '#2ca02c', '#ff7f0e', '#9467bd', 
+        '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf'
+    ]
     
     max_overall_day = len(cache['games'])
 
