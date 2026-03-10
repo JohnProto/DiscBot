@@ -25,25 +25,30 @@ class WordleCommands(commands.Cog):
     @app_commands.command(name="genplots", description="Generate WAR graph")
     @app_commands.autocomplete(player_id=player_autocomplete)
     async def genplots(self, interaction: discord.Interaction, player_id: str):
-        await interaction.response.defer(thinking=True)
-        logger.info(f"Command /genplots used by {interaction.user.name}")
+        # THE FIX: Added ephemeral=True so it hides the "thinking..." message
+        await interaction.response.defer(thinking=True, ephemeral=True)
+        
+        logger.info(f"Command /genplots used by {interaction.user.name} (Hidden/Ephemeral)")
         
         cache = await data.update_data(interaction.channel, interaction.guild)
         
         if player_id not in cache["players"]:
-            await interaction.followup.send("❌ No data for this player.")
+            # THE FIX: Added ephemeral=True to error messages
+            await interaction.followup.send("❌ No data for this player.", ephemeral=True)
             return
 
         war_hist = cache["players"][player_id]["war_history"]
         if len(war_hist) < 2:
-            await interaction.followup.send("📉 Not enough games for a graph.")
+            await interaction.followup.send("📉 Not enough games for a graph.", ephemeral=True)
             return
 
         user = interaction.guild.get_member(int(player_id))
         name = user.display_name if user else "Unknown"
         
         file = analytics.generate_war_graph(name, war_hist)
-        await interaction.followup.send(f"📈 **WAR Analysis for {name}**", file=file)
+        
+        # THE FIX: Added ephemeral=True to the final graph delivery
+        await interaction.followup.send(f"📈 **WAR Analysis for {name}**", file=file, ephemeral=True)
 
     @app_commands.command(name="wordlestats", description="Show Leaderboard")
     async def wordlestats(self, interaction: discord.Interaction):
