@@ -42,7 +42,7 @@ class WordleCommands(commands.Cog):
                 
         return choices[:25]
     
-    @app_commands.command(name="compare", description="[WIP] Compare player graphs (Choose up to 5, or ALL)")
+    @app_commands.command(name="compare", description="Compare player WAR graphs (Choose up to 5, or ALL)")
     @app_commands.autocomplete(player1=player_autocomplete, player2=player_autocomplete, player3=player_autocomplete, player4=player_autocomplete, player5=player_autocomplete)
     async def compare(self, interaction: discord.Interaction, 
                       player1: str, 
@@ -51,17 +51,10 @@ class WordleCommands(commands.Cog):
                       player4: str = None, 
                       player5: str = None):
         
-        await interaction.response.defer(thinking=True, ephemeral=True)
+        # THE FIX: Removed ephemeral=True so the "Bot is thinking..." is visible to everyone
+        await interaction.response.defer(thinking=True)
         
-        # --- THE BIOMETRIC LOCK ---
-        YOUR_DISCORD_ID = 1003788126508040334
-        
-        if interaction.user.id != YOUR_DISCORD_ID:
-            logger.warning(f"Unauthorized access attempt to /compare by {interaction.user.name}")
-            await interaction.followup.send("🚧 This command is currently in development.", ephemeral=True)
-            return
-            
-        logger.info(f"Stealth command /compare used by {interaction.user.name}")
+        logger.info(f"Public command /compare used by {interaction.user.name}")
         cache = await data.update_data(interaction.channel, interaction.guild)
         
         # Gather whatever they typed into the boxes
@@ -81,14 +74,16 @@ class WordleCommands(commands.Cog):
                 if p in cache["players"] and p not in uids_to_compare:
                     uids_to_compare.append(p)
                     
-        # Sanity check
+        # Sanity check (Kept ephemeral so errors don't spam the chat)
         if len(uids_to_compare) < 2:
             await interaction.followup.send("❌ Please select at least 2 different players, or choose '🌟 ALL PLAYERS 🌟'.", ephemeral=True)
             return
 
         # Generate the graph
         file = analytics.generate_comparison_graph(interaction.guild, cache, uids_to_compare)
-        await interaction.followup.send(f"🤫 **Confidential Comparison ({len(uids_to_compare)} Players)**", file=file, ephemeral=True)
+        
+        # THE FIX: Removed ephemeral=True and the "Confidential" text
+        await interaction.followup.send(f"📊 **Head-to-Head Comparison ({len(uids_to_compare)} Players)**", file=file)
 
     @app_commands.command(name="genplots", description="Generate WAR graph")
     @app_commands.autocomplete(player_id=player_autocomplete)
