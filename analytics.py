@@ -91,14 +91,14 @@ def generate_war_graph(user_name: str, war_history: List[float]) -> discord.File
 
 def generate_comparison_graph(guild: discord.Guild, cache: Dict[str, Any], uids: List[str]) -> discord.File:
     """
-    Generates a chronological multi-line graph comparing players.
-    Uses Server Game Index to ensure 100% mathematical accuracy.
+    Generates a beautiful, chronological multi-line graph comparing players.
+    Uses continuous lines without individual dots, and gray dotted AFK flatlines.
+    Ensures 100% math accuracy using Game Index.
     """
     player_timelines = {uid: {} for uid in uids}
     current_war = {uid: 0.0 for uid in uids}
 
-    # THE FIX: Use enumerate to get a guaranteed chronological day index (1, 2, 3...)
-    # This prevents any games from being skipped if the Wordle bot streak text was missing.
+    # Data aggregation using Game Index (guarantees accuracy)
     for index, game in enumerate(cache['games']):
         day_number = index + 1 
         
@@ -112,7 +112,8 @@ def generate_comparison_graph(guild: discord.Guild, cache: Dict[str, Any], uids:
                 current_war[uid] += (day_avg - score)
                 player_timelines[uid][day_number] = current_war[uid]
 
-    # Start Drawing
+    # Start Drawing - Setup Aesthetics
+    # Use 'seaborn-v0_8-notebook' or 'bmh' style for a modern look
     plt.style.use('bmh')
     fig, ax = plt.subplots(figsize=(12, 7))
     colors = ['#1f77b4', '#d62728', '#2ca02c', '#ff7f0e', '#9467bd']
@@ -122,6 +123,7 @@ def generate_comparison_graph(guild: discord.Guild, cache: Dict[str, Any], uids:
     for idx, uid in enumerate(uids):
         user = guild.get_member(int(uid))
         name = user.display_name if user else f"Player {uid}"
+        # Cycle through our defined colors
         color = colors[idx % len(colors)]
 
         timeline = player_timelines[uid]
@@ -130,42 +132,47 @@ def generate_comparison_graph(guild: discord.Guild, cache: Dict[str, Any], uids:
         played_days = sorted(timeline.keys())
         wars = [timeline[d] for d in played_days]
 
-        # Draw the actual dots where they played
-        ax.plot(played_days, wars, marker='o', markersize=5, linestyle='', color=color)
+        # --- THE FIX: We removed the explicit marker ('o') plotting here ---
+        # NO MORE SPOTS AT EVERY DAY. Only smooth line segments will remain.
 
-        # Connect the dots with our logic
+        # Connect the segments with specialized logical styling
         for i in range(len(played_days) - 1):
             d1, d2 = played_days[i], played_days[i+1]
             w1, w2 = wars[i], wars[i+1]
 
             if d2 - d1 == 1:
-                # Played consecutive days: Solid line
-                ax.plot([d1, d2], [w1, w2], linestyle='-', color=color, linewidth=2.5)
+                # Played consecutive days: Smooth Solid line (increased linewidth for beauty)
+                ax.plot([d1, d2], [w1, w2], linestyle='-', color=color, linewidth=3)
             else:
-                # Skipped days: Draw horizontal AFK flatline in gray
-                ax.plot([d1, d2-1], [w1, w1], linestyle=':', color='gray', linewidth=2, alpha=0.6)
-                # Draw the jump when they finally played again
-                ax.plot([d2-1, d2], [w1, w2], linestyle='--', color=color, linewidth=2, alpha=0.8)
+                # Skipped days: The AFK Gray Dotted Flatline (tells the story)
+                ax.plot([d1, d2-1], [w1, w1], linestyle=':', color='gray', linewidth=2.5, alpha=0.5)
+                # Dashed line for the jump back in
+                ax.plot([d2-1, d2], [w1, w2], linestyle='--', color=color, linewidth=2.5, alpha=0.9)
 
         # If they haven't played up to the CURRENT day, draw a final gray flatline
         last_played = played_days[-1]
         last_war = wars[-1]
         if last_played < max_overall_day:
-            ax.plot([last_played, max_overall_day], [last_war, last_war], linestyle=':', color='gray', linewidth=2, alpha=0.6)
+            ax.plot([last_played, max_overall_day], [last_war, last_war], linestyle=':', color='gray', linewidth=2.5, alpha=0.5)
 
-        # Add them to the legend with their final score
-        ax.plot([], [], color=color, linewidth=3, label=f"{name} ({last_war:+.2f})")
+        # Add them to the legend with their beautiful solid line and final score
+        ax.plot([], [], color=color, linewidth=4, label=f"{name} ({last_war:+.2f})")
 
     # Add the Server Average baseline (WAR = 0)
-    ax.axhline(0, color='black', linewidth=1.5, alpha=0.8, linestyle='--')
+    ax.axhline(0, color='black', linewidth=2, alpha=0.8, linestyle='--')
     
-    ax.set_title("Chronological Head-to-Head Comparison", fontsize=16, fontweight='bold')
-    ax.set_xlabel("Official Server Game Number")
-    ax.set_ylabel("Total WAR")
-    ax.legend(loc="upper left")
+    ax.set_title("Chronological Head-to-Head Comparison", fontsize=18, fontweight='bold')
+    ax.set_xlabel("Official Server Game Number", fontsize=12)
+    ax.set_ylabel("Total WAR", fontsize=12)
+    
+    # Increase legend font size for readability
+    ax.legend(loc="upper left", fontsize=10, frameon=True)
+    
+    # Set tick parameters for beauty
+    ax.tick_params(axis='both', which='major', labelsize=10)
     
     buf = io.BytesIO()
     plt.savefig(buf, format='png', dpi=100, bbox_inches='tight')
     buf.seek(0)
     plt.close(fig)
-    return discord.File(buf, filename="head_to_head.png")
+    return discord.File(buf, filename="head_to_head_comparison.png")
