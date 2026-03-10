@@ -78,15 +78,16 @@ class WordleCommands(commands.Cog):
         
         if message.author.id == CONFIG["WORDLE_BOT_ID"]:
             if "Your group is on a" in message.content and "day streak" in message.content:
-                logger.info(f"🔥 Official Streak Detected in {message.channel.name}!")
+                logger.info(f"🔥 Official Streak Detected in {message.channel.name}! Replying with stats...")
                 
                 cache = await data.update_data(message.channel, message.guild)
                 stats = analytics.get_leaderboard_stats(message.guild, cache)
                 
-                # FIX: Here too!
                 msg = analytics.render_leaderboard_table(stats, cache)
                 
-                await message.channel.send(msg)
+                # THE FIX: Changed message.channel.send to message.reply
+                # mention_author=False means it links the messages but doesn't send a ping notification
+                await message.reply(msg, mention_author=False)
 
 async def setup(bot):
     await bot.add_cog(WordleCommands(bot))
