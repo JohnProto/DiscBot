@@ -3,5 +3,6 @@
     "fail_penalty": 7,
     "streak_start_date": "2026-08-03",
     "season_name": "Season 2",
+    "min_games_for_leaderboard": 1,
     "timezone_offset": 0
 }

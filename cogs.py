@@ -66,7 +66,7 @@ class WordleCommands(commands.Cog):
         # Logic: Did they select the "ALL PLAYERS" fake user?
         if "ALL" in inputs:
             for uid, stats in cache["players"].items():
-                if stats["games_played"] >= CONFIG.get("MIN_GAMES", 5):
+                if stats["games_played"] >= CONFIG.get("MIN_GAMES", 1):
                     uids_to_compare.append(uid)
         else:
             # Logic: Just plot the specific players they picked

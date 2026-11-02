@@ -15,7 +15,7 @@ def load_config():
         "fail_penalty": 7,
         "streak_start_date": "2025-01-01",
         "season_name": "Season 1",
-        "min_games_for_leaderboard": 5, # <--- Added this to defaults!
+        "min_games_for_leaderboard": 1,
         "timezone_offset": 0
     }
     
@@ -46,7 +46,7 @@ def parse_config(raw):
         "FAIL_PENALTY": int(raw.get("fail_penalty", 7)),
         "STREAK_START_DATE": start_date,
         "SEASON_NAME": raw.get("season_name", "Season 1"),
-        "MIN_GAMES": int(raw.get("min_games_for_leaderboard", 5)), # <--- THE FIX
+        "MIN_GAMES": int(raw.get("min_games_for_leaderboard", 1)),
         "TZ": timezone(timedelta(hours=raw.get("timezone_offset", 0)))
     }
 

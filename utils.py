@@ -24,7 +24,7 @@ def parse_wordle_message(content, name_map, fail_penalty):
     """Extracts scores, user IDs, and the current streak from a message."""
     score_pattern = re.compile(r"([X\d])/6:(.*)")
     mention_pattern = re.compile(r"<@!?(\d+)>")
-    streak_pattern = re.compile(r"on a (\d+) day streak")
+    streak_pattern = re.compile(r"on an? (\d+) day streak")
     
     results = []
     streak = 0
